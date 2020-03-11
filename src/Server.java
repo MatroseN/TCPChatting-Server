@@ -1,11 +1,6 @@
-import java.net.DatagramPacket;
-import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Hashtable;
-import java.util.List;
 
 public class Server extends Thread{
     public Server(int serverPort){
@@ -32,23 +27,14 @@ public class Server extends Thread{
                 System.err.println("Server socket couldn't accept");
             }
 
-            String receivedMessage = serverEnd.readStream(socket);
-
-            new HandleClient(serverEnd, socket, replyMessage, connectedMembers);
+            new HandleClient(serverEnd, socket, connectedMembers);
 
         }while(true);
     }
 
     private int portNumber;
-    private String replyMessage;
     private EndPoint serverEnd;
-    private String receivedMessage;
-    private String clientName;
-    private String command;
     private Hashtable<String, Member> connectedMembers;
-    private InetAddress senderAddress;
-    private int senderPort;
-    private String recipientName;
     private ServerSocket serverSocket;
     private Socket socket;
 }

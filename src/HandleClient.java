@@ -1,5 +1,3 @@
-import java.net.InetAddress;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -8,44 +6,52 @@ import java.util.List;
 
 // Takes care of the response to the clients in this separate thread to allow for some parallelism
 public class HandleClient extends Thread{
-    public HandleClient(EndPoint serverEnd, Socket socket, String replyMessage, Hashtable<String, Member> connectedMembers){
+    public HandleClient(EndPoint serverEnd, Socket socket, Hashtable<String, Member> connectedMembers){
         this.serverEnd = serverEnd;
         this.socket = socket;
-        this.replyMessage = replyMessage;
         this.connectedMembers = connectedMembers;
         start();
     }
 
+    // Checks what command was passed and handle the request based on what the command was
     private void checkCommand(String command){
-        switch(command){
-            case "/handshake":
-                processNewMember(clientName);
-                break;
-            case "/tell":
-                tellHandler();
-                break;
-            case "/list":
-                // TODO: sendPrivateMessage(nameList, "Server", senderName);
-            case "/leave":
-                removeFromNameList();
-                broadcast("left the chatroom", clientName);
-                break;
-            case "/broadcast":
-                broadcast();
+        // Only accept handshakes from unconnected clients. And don't allow unconnected clients to pass other commands
+        if(getConnectedMember(clientName) == null && command.equals("/handshake")){
+            processNewMember(clientName);
+        }else{
+            switch(command){
+                case "/tell":
+                    tellHandler();
+                    break;
+                case "/list":
+                    // TODO: sendPrivateMessage(nameList, "Server", senderName);
+                case "/leave":
+                    broadcast("left the chatroom", clientName);
+                    removeFromNameList();
+                    break;
+                case "/broadcast":
+                    broadcast();
+                    break;
+                default:
+                    serverEnd.writeStream(socket, "Server: Not a valid command!");
+                    break;
+            }
         }
     }
 
+    // Handles what should be done with the message from a /tell command. To make sure it gets formatted correctly
     private void tellHandler(){
-        List<String> temp = new ArrayList<>(Arrays.asList(receivedMessage));
+        List<String> temp = new ArrayList<>(Arrays.asList(receivedMessage.split("\\|")));
         recipientName = temp.get(0);
         temp.remove(0);
         receivedMessage = Arrays.toString(temp.toArray());
         receivedMessage = String.join("|", receivedMessage);
         replyMessage = receivedMessage.replaceFirst("\\[", "").replaceAll("]", "");
-        receivedMessage = clientName + ": " + receivedMessage;
-        sendPrivateMessage(receivedMessage, clientName, recipientName);
+        replyMessage = clientName + ": " + replyMessage;
+        sendPrivateMessage(replyMessage, recipientName);
     }
 
+    // Adds an unconnected client to the hashtable with all connected clients
     private void processNewMember(String clientName){
         if(connectedMembers.get(clientName) == null){
             connectedMembers.put(clientName, new Member(clientName, socket));
@@ -53,11 +59,13 @@ public class HandleClient extends Thread{
         }
     }
 
-    private void sendPrivateMessage(String message, String senderName, String recipientName){
+    // Sends a message to a specific client
+    private void sendPrivateMessage(String message, String recipientName){
         Member recipient = getConnectedMember(recipientName);
-        serverEnd.writeStream(socket, message);
+        serverEnd.writeStream(recipient.getSocket(), message);
     }
 
+    // Broadcast for client messages
     private void broadcast(){
         replyMessage = String.join("|", receivedMessage);
         replyMessage = receivedMessage.replaceFirst("\\[", "").replaceAll("]", "");
@@ -73,6 +81,7 @@ public class HandleClient extends Thread{
 
     }
 
+    // Broadcast for server messages
     private void broadcast(String message, String senderName){
         message = "Server: " + senderName + " " + message;
         Socket recipientSocket;
@@ -84,30 +93,35 @@ public class HandleClient extends Thread{
         }
     }
 
+    // Remove client name from the list
     private void removeFromNameList(){
         connectedMembers.remove(clientName);
     }
 
-    public void setReplyMessage(String replyMessage){
-        this.replyMessage = replyMessage;
-    }
-
+    // Gets a specific member from the hashtable based on name
     private Member getConnectedMember(String memberName){
         return connectedMembers.get(memberName);
     }
 
+    // Gets the client name from the message and removes it from the message
     private void getNameFromMessage(){
         List<String> temp = new ArrayList<>(Arrays.asList(receivedMessage.split("\\|")));
         clientName = temp.get(temp.size() -1);
         temp.remove(temp.size() -1);
         receivedMessage = "";
 
-        for(String s : temp){
-            receivedMessage += "|" + s;
+        for(int i = 0; i < temp.size(); i++){
+            if(i != 0){
+                receivedMessage += "|" + temp.get(i);
+            }else{
+                receivedMessage += temp.get(i);
+            }
         }
+
         replyMessage = String.join("|", receivedMessage);
     }
 
+    // Gets the command from the message and removes it from the message
     private void getCommandFromMessage(){
         List<String> temp = new ArrayList<>(Arrays.asList(receivedMessage.split("\\|")));
         if(temp.get(0).startsWith("/")){
@@ -115,17 +129,25 @@ public class HandleClient extends Thread{
             temp.remove(0);
             receivedMessage = "";
 
-            for(String s : temp){
-                receivedMessage += "|" + s;
+            for(int i = 0; i < temp.size(); i++){
+                if(i != 0){
+                    receivedMessage += "|" + temp.get(i);
+                }else{
+                    receivedMessage += temp.get(i);
+                }
             }
         }
     }
 
     public void run(){
-        receivedMessage = serverEnd.readStream(socket);
-        getCommandFromMessage();
-        getNameFromMessage();
-        checkCommand(command);
+        while(true){
+            receivedMessage = serverEnd.readStream(socket);
+            if(receivedMessage != null){
+                getCommandFromMessage();
+                getNameFromMessage();
+                checkCommand(command);
+            }
+        }
     }
 
     private EndPoint serverEnd;
